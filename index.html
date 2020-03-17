@@ -4,12 +4,12 @@
 
 <head>
 	<meta charset="UTF-8">
-	<title>Polinate Excel</title>
+	<title>Pollinate Excel</title>
 	<link rel="icon" href="./img/bee.png" type="image/png">
 	<style type="text/css">
 		*, *:after, *:before { -webkit-box-sizing: border-box; -moz-box-sizing: border-box; box-sizing: border-box; }
 		html, body {position: relative; width: 100%; height: 100%;margin:0;padding:0;font-family: sans-serif;}
-		body {display: flex; flex-direction: column; justify-items: stretch; align-items: center; position: relative;}
+		body {display: flex; flex-direction: column; justify-items: stretch; align-items: center; position: relative; }
 		body::before { 
 			content: ' ';
 			display: block;
@@ -29,9 +29,9 @@
 		.loader-img { position: absolute; top: 50%; left: 50%; transform: translate3d(-50%, -50%, 0); pointer-events: none; }
 		
 		/* controls */
-		.controls { display: flex; overflow-x: auto;  width: 100%; max-width: 1000px; min-width: 0; align-items: center; 
-					justify-content: space-between; text-align: center; font-size: .8rem; font-variant: small-caps; padding: 1rem 0; }
-		.controls::before, .controls::after { content: ''; }
+		.controls { display: flex; overflow: auto;  width: 100%; min-width: 0; min-height: 0;
+					text-align: center; font-size: .8rem; font-variant: small-caps; padding: 1rem 0; }
+		.controls::before, .controls::after { content: ''; margin: auto; }
 		.controls label { text-align: center; padding: .5rem; white-space: nowrap; flex: 0 0 auto;}
 		.controls label:hover { color: #d742f4; }
 		.controls label:hover input { color: #d742f4; border-color: #d742f4; }
@@ -39,6 +39,46 @@
 		.controls span { display: block; margin-bottom: .3rem; }
 		.controls input { font-size: .9rem; padding: .3rem; outline: 0; border-style: solid; border-width: 2px; text-align: center; }
 		.controls input[type="color"] { padding: 0; border-color: inherit; height: 1.8rem; }
+
+		/*Checkboxes styles*/
+		input[type="checkbox"] { display: none; }
+
+		.controls label:hover .label:before { color: #d742f4; border-color: #d742f4; }
+
+		input[type="checkbox"] + .label {
+			display: block;
+			width: 100%;
+			height: 1.6rem;
+			text-align: center;
+			position: relative;
+			cursor: pointer;
+			-webkit-user-select: none;
+			-moz-user-select: none;
+			-ms-user-select: none;
+		}
+
+		input[type="checkbox"] + .label:before {
+			content: '';
+			display: inline-block;
+			width: 1.6rem;
+			height: 1.6rem;
+			border: 2px solid black;
+			opacity: .6;
+			-webkit-transition: all .4s, border-color .3s;
+			transition: all .4s, border-color .3s;
+		}
+
+		input[type="checkbox"]:checked + .label:before {
+			width: 10px;
+			top: -5px;
+			left: 5px;
+			border-radius: 0;
+			opacity: 1;
+			border-top-color: transparent;
+			border-left-color: transparent;
+			-webkit-transform: rotate(45deg);
+			transform: rotate(45deg);
+		}
 
 		/* dropzone */
 		.dropzone { flex-grow: 1; margin: auto; width: 90%; max-width: 600px; height: 80%; max-height: 500px; }
@@ -52,8 +92,33 @@
 		
 		/* footer */
 		footer { margin-top: auto; width: 100%; text-align: center; padding: 0.5rem; font-size: 0.9rem; font-weight: bolder;}
-		footer a { color: #d742f4; }
-		footer a:hover { color: #611470; }
+		footer a:hover { color: #d742f4; }
+		footer a { color: #611470; }
+
+		/* hide / reveal */
+		.controls label.hidden { padding: 0rem; overflow:hidden; transition: max-width 0.5s, max-height 0.5s, padding 0.5s; transition-delay: 0.5s; }
+		.controls label.hidden.visible { padding: .5rem; }
+
+		@media screen and (min-width: 1200px) {
+			/* hide / reveal */
+			.controls label.hidden { max-width: 0rem; padding: .5rem 0; }
+			.controls label.hidden.visible { max-width: 20rem; }
+		}
+
+		@media screen and (max-width: 1200px) {
+			body { flex-direction: row-reverse; padding-left: 1rem; overflow: hidden; }
+
+			.controls { flex-direction: column; width: auto !important; height: 100%; margin: auto 1rem !important; align-self: flex-start; }
+			.controls label { width: 100%; }
+			.controls input { width: 100%; }
+
+			/* hide / reveal */
+			.controls label.hidden { max-height: 0rem; }
+			.controls label.hidden.visible { max-height: 20rem; }
+
+			footer { position: fixed; bottom: 0; pointer-events: none; }
+			footer a { pointer-events: all; }
+		}
 	</style>
 </head>
 
@@ -64,29 +129,45 @@
 	</div>
 
 	<div class="controls">
-		<label for="worksheetName">
+		<label for="worksheetName" title="Name of the worksheet in which the data is located.">
 			<span>Worksheet name</span>
 			<input type="text" id="worksheetName" name="worksheetName" />
 		</label>
 
-		<label for="sourceCellLocation">
+		<label for="sourceCellLocation" title="Start cell for source elements.">
 			<span>Source cell</span>
 			<input type="text" id="sourceCellLocation" name="sourceCellLocation" onkeyup="this.value = this.value.toUpperCase();" />
 		</label>
 
-		<label for="targetCellLocation">
+		<label for="targetCellLocation" title="Start cell for target elements.">
 			<span>Target cell</span>
 			<input type="text" id="targetCellLocation" name="targetCellLocation" onkeyup="this.value = this.value.toUpperCase();" />
 		</label>
 
-		<label for="highlightColor">
-			<span>Highlight in</span>
+		<label for="highlightColor" title="Color of the cell if a value is a perfect match.">
+			<span>Exact match in</span>
 			<input type="color" id="highlightColor" name="highlightColor" />
 		</label>
 
-		<label for="highlightEmptyColor">
-			<span>Highlight empty in</span>
+		<label for="highlightEmptyColor" title="Color of the cell if there is a source value, but no equivalent target.">
+			<span>No match in</span>
 			<input type="color" id="highlightEmptyColor" name="highlightEmptyColor" />
+		</label>
+
+		<label for="fuzzy" title="Toggles whether fuzzy matching should be used. Fuzzy match means that there is only a partial match between 2 values in the file.">
+			<span>Use fuzzy</span>
+			<input type="checkbox" id="fuzzy" name="fuzzy" data-side-effect="hideRelated" data-side-effect-args="highlightFuzzyColor,acceptableFuzzyRating" />
+			<div class="label"></div>
+		</label>
+
+		<label for="highlightFuzzyColor" class="hidden" title="Color of the cell if a value is a fuzzy match.">
+			<span>Fuzzy match in</span>
+			<input type="color" id="highlightFuzzyColor" name="highlightFuzzyColor" />
+		</label>
+
+		<label for="acceptableFuzzyRating" class="hidden" title="0 to 1 value representing the minimal acceptable similarity between 2 strings.">
+			<span>Min. fuzzy rating</span>
+			<input type="number" id="acceptableFuzzyRating" name="acceptableFuzzyRating" min="0" max="1" step="0.01" />
 		</label>
 	</div>
 
@@ -105,9 +186,12 @@
 	
 	<!-- JS  -->
 	<script type="text/javascript" src=".\js\filesaver\FileSaver.js"></script>
-	<script type="text/javascript" src=".\js\xlsx/xlsx.min.js"></script>
-	<script type="text/javascript" src=".\js\xlsx/exceljs.js"></script>
+	<!-- <script type="text/javascript" src=".\js\xlsx\xlsx.min.js"></script>
+	<script type="text/javascript" src=".\js\xlsx\exceljs.min.js"></script> -->
 
+	<script type="text/javascript" src=".\js\similarity-compare.js"></script>
+	<script type="text/javascript" src=".\js\jsdiff.js"></script>
+	
 	<script type="text/javascript" src=".\js\app.js"></script>
 </body>
 

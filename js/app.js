@@ -1,27 +1,53 @@
 
 window.onload = function () {
 
-var CONFIG = {
+const CONFIG = {
     // sourceCellLocation: 'D1',
     // targetCellLocation: 'E1',
     // worksheetName: 'Sheet1',
     sourceCellLocation: 'K6',
     targetCellLocation: 'L6',
     worksheetName: 'Content Matrix 5.0',
+    
     highlightColor: '#4cbb17',// '#008000',//'#ffa500',
     highlightEmptyColor: '#ed2939',//'#fc1c03',
-    logs: true,
-    version: 'exceljs',
-}
-var decode_cell = XLSX.utils.decode_cell;
-var encode_cell = XLSX.utils.encode_cell;
+    logs: false,
+    version: 'exceljs', // xlsx value will trigger another library, but it will not work with the latest changes, such as fuzzy
+    fuzzy: true,
+    acceptableFuzzyRating: 0.5,
+    highlightFuzzyColor: '#297eed'
+};
+
+const sideEffects = {
+    _exec(e) {
+        let sideEffect = e.target.dataset.sideEffect,
+            args = e.target.dataset.sideEffectArgs;
+        
+        args && (args = args.split(','));
+
+        if (sideEffects[ sideEffect ])
+            sideEffects[ sideEffect ] ( e, args );
+        else
+            console.log(`Side-effect ${sideEffect} does not exist.`);
+    },
+
+    hideRelated(e, args) {
+        args = args.map( arg => `label[for=${arg}]` ).join(',');
+
+        let els = document.querySelectorAll(args);
+
+        if (e.target.checked)
+            els.forEach( el => el.classList.add('visible'));
+        else
+            els.forEach( el => el.classList.remove('visible'));
+    }
+};
 
 // start-up
 setupConfigs();
 setupDropzone();
 
 /* MAIN FUNCTION TO START READING FILES FROM DROZONE */
-//https://github.com/protobi/js-xlsx
 async function readFiles(files) {
 
     toggleLoader();
@@ -33,25 +59,7 @@ async function readFiles(files) {
     toggleLoader();
 }
 
-async function xlsxVersion(files) {
-    files = Array.prototype.slice.call(files);
-
-    // get the relevant content from each file
-    let fileContents = await Promise.all( files.map(_extractData) );
-    CONFIG.logs && console.log('file contents', fileContents);
-
-    // merge that into a single store
-    let store = mergeData(fileContents);
-    CONFIG.logs && console.log('store', store);
-
-    // update files based on combined store
-    let updatedWorkbooks = _updateWorkbooks(fileContents, store);
-    CONFIG.logs && console.log('updated workbooks', updatedWorkbooks);
-
-    // // save as excel file
-    _saveToXlsx(updatedWorkbooks);
-}
-
+// exceljs 3.4
 async function exceljsVersion(files) {
     files = Array.prototype.slice.call(files);
 
@@ -71,7 +79,6 @@ async function exceljsVersion(files) {
     saveToXlsx(updatedWorkbooks);
 }
 
-// exceljs
 function extractData(file) {
     return new Promise( (res, rej) => {
         // read the excel files
@@ -106,11 +113,113 @@ function extractData(file) {
         }
         reader.readAsArrayBuffer(file);
     });
-}	
+}
 
-// xlsx
+function updateWorkbooks(workbooks, store) {
+    return workbooks.map( wb => {
+        let workbook = wb.workbook,
+            worksheet = workbook.getWorksheet( CONFIG.worksheetName ),
+            sourceColumn = worksheet.getColumn( CONFIG.sourceCellLocation.split('')[0] ),
+            targetColumnName = CONFIG.targetCellLocation.split('')[0],
+            exactMatchColor = '00' + (CONFIG.highlightColor.replace('#', '').toUpperCase()),
+            fuzzyMatchColor = '00' + (CONFIG.highlightFuzzyColor.replace('#', '').toUpperCase()),
+            emptyColor = '00' + (CONFIG.highlightEmptyColor.replace('#', '').toUpperCase());
+        
+        sourceColumn.eachCell( (cell, rowNumber) => {
+            let sourceText = cell.text,
+                target = worksheet.getCell(`${targetColumnName}${rowNumber}`),
+                color = null;
+
+            // cancel if:
+            // - no source text
+            // - source text and target text
+            if (    
+                    !sourceText ||
+                    (sourceText && target.text)
+               ) return false;
+
+            // 100% match
+            if (store[sourceText]) {
+                target.value = store[sourceText].target;
+                color = exactMatchColor;
+            }
+            // fuzzy match
+            else if ( CONFIG.fuzzy ) {
+                let { bestMatch } = compare.findBestMatch( sourceText, Object.keys(store) );
+                
+                if (bestMatch.rating >= CONFIG.acceptableFuzzyRating) {
+                    target.value = store[bestMatch.target].target;
+
+                    target.note = {
+                        texts: [
+                            ...diff(bestMatch.target, sourceText),
+                            {'font': {'size': 12, 'color': {'theme': 1}, 'name': 'Calibri', 'family': 2, 'scheme': 'minor'}, 'text': '\r\n\r\nFuzzy percent: \r\n'},
+                            {'font': {'bold': true, 'size': 12, 'color': {'theme': 1}, 'name': 'Calibri', 'scheme': 'minor'}, 'text': `${ (bestMatch.rating * 100).toFixed(2) }%\r\n`},
+                            {'font': {'size': 12, 'color': {'theme': 1}, 'name': 'Calibri', 'family': 2, 'scheme': 'minor'}, 'text': 'Matched source: \r\n'},
+                            {'font': {'bold': true, 'size': 12, 'color': {'theme': 1}, 'name': 'Calibri', 'scheme': 'minor'}, 'text': `${bestMatch.target} \r\n`}
+                        ],
+                        shapeId: 2
+                    }
+
+                    color = fuzzyMatchColor;
+                } else
+                    color = emptyColor;
+            }
+            // if no 100% and no fuzzy
+            else {
+                color = emptyColor;
+            }
+
+            // fix the styles
+            target.style = Object.create(target.style);
+            
+            target.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: {argb: color }
+            }
+        });
+		
+        return wb;
+    });
+}
+
+function saveToXlsx(files) {
+    files.forEach( file => {
+        const wbout = file.workbook.xlsx.writeBuffer({ base64: true });
+        wbout.then( buffer => {
+            saveAs(
+                new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+                `merged_${file.file}`
+            );
+        });
+    });
+}
+
+// xlsx = https://github.com/protobi/js-xlsx
+async function xlsxVersion(files) {
+    files = Array.prototype.slice.call(files);
+
+    // get the relevant content from each file
+    let fileContents = await Promise.all( files.map(_extractData) );
+    CONFIG.logs && console.log('file contents', fileContents);
+
+    // merge that into a single store
+    let store = mergeData(fileContents);
+    CONFIG.logs && console.log('store', store);
+
+    // update files based on combined store
+    let updatedWorkbooks = _updateWorkbooks(fileContents, store);
+    CONFIG.logs && console.log('updated workbooks', updatedWorkbooks);
+
+    // // save as excel file
+    _saveToXlsx(updatedWorkbooks);
+}
+
 function _extractData(file) {
     return new Promise( (res, rej) => {
+        const decode_cell = XLSX.utils.decode_cell;
+        const encode_cell = XLSX.utils.encode_cell;
         // read the excel files
         let reader = new FileReader();
         reader.onload = function(e) {
@@ -145,65 +254,11 @@ function _extractData(file) {
         }
         reader.readAsArrayBuffer(file);
     });
-}			
-
-// both
-function mergeData(raw) {
-    return raw.reduce( (final, {file, data}) => {
-        let entries = Object.entries( data );
-        entries.forEach( ([source, target]) => {
-            if (target)
-                final[source] = { target, file }
-        })
-        
-        return final;
-    }, {});
 }
 
-// exceljs
-function updateWorkbooks(workbooks, store) {
-    return workbooks.map( wb => {
-        let workbook = wb.workbook;
-        let worksheet = workbook.getWorksheet( CONFIG.worksheetName );;
-        let sourceColumn = worksheet.getColumn( CONFIG.sourceCellLocation.split('')[0] );
-        let targetColumnName = CONFIG.targetCellLocation.split('')[0];
-
-        let color = '00' + (CONFIG.highlightColor.replace('#', '').toUpperCase());
-        let emptyColor = '00' + (CONFIG.highlightEmptyColor.replace('#', '').toUpperCase());
-        sourceColumn.eachCell( (cell, rowNumber) => {
-            let source = cell.text;
-            let target = worksheet.getCell(`${targetColumnName}${rowNumber}`);
-
-            // if target already has value, skip update
-            if ( !target.text && store[source] ) {
-                target.value = store[source].target;
-
-                target.style = Object.create(target.style);
-                
-                target.fill = {
-                    type: 'pattern',
-                    pattern: 'solid',
-                    fgColor: {argb: color },
-                    // bgColor: {argb: color },
-                }
-            } else if (source && !target.text) {
-                target.style = Object.create(target.style);
-                
-                target.fill = {
-                    type: 'pattern',
-                    pattern: 'solid',
-                    fgColor: {argb: emptyColor },
-                    // bgColor: {argb: emptyColor },
-                }
-            }
-        });
-		
-        return wb;
-    });
-}
-
-// xlsx
 function _updateWorkbooks(workbooks, store) {
+    const decode_cell = XLSX.utils.decode_cell;
+    const encode_cell = XLSX.utils.encode_cell;
     return workbooks.map( workbook => {
         let wb = workbook.workbook;
         let sheet = wb.Sheets[ CONFIG.worksheetName ];
@@ -241,20 +296,6 @@ function _updateWorkbooks(workbooks, store) {
     });
 }
 
-// exceljs
-function saveToXlsx(files) {
-    files.forEach( file => {
-        const wbout = file.workbook.xlsx.writeBuffer({ base64: true });
-        wbout.then( buffer => {
-            saveAs(
-                new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
-                `merged_${file.file}`
-            );
-        });
-    });
-}
-
-// xlsx
 function _saveToXlsx(files) {
     //export and save file
     const wopts = { bookType:'xlsx', bookSST:true, type:'binary', cellStyles: true };
@@ -273,6 +314,8 @@ function _saveToXlsx(files) {
 }
 
 function getAllSourceCells(sheet, sourceCoords) {
+    const decode_cell = XLSX.utils.decode_cell;
+
     return Object.keys( sheet )
         .filter( cellCode => {
             if (cellCode.startsWith('!') || decode_cell(cellCode).c !== sourceCoords.c) 
@@ -282,18 +325,60 @@ function getAllSourceCells(sheet, sourceCoords) {
         });
 }
 
+// both
+function mergeData(raw) {
+    return raw.reduce( (final, {file, data}) => {
+        let entries = Object.entries( data );
+        entries.forEach( ([source, target]) => {
+            if (target)
+                final[source] = { target, file }
+        })
+        
+        return final;
+    }, {});
+}
+
+
+/* CONFIG */
 function setupConfigs() {
+    // set up proper excel parser
+    let parser = CONFIG.version;
+    let script = document.createElement('script');
+    script.src = `./js/xlsx/${parser}.min.js`;
+    document.body.appendChild(script);
+    
+    //
     let configs = Object.entries(CONFIG);
 
+    // setup event listener
+    let controls = document.getElementsByClassName('controls')[0];
+    controls.addEventListener( 'change', e => {
+        let val = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+        
+        // side-effects
+        if (e.target.dataset.sideEffect)
+            sideEffects._exec(e);
+
+        // update
+        CONFIG[ e.target.name ] = val;
+
+        CONFIG.logs && console.log('Event data', e, val);
+        CONFIG.logs && console.log('CONFIG was updated', CONFIG);
+    }, true);
+    
+    // update based on default config
     configs.forEach( ([id, value]) => {
         let input = document.getElementById(id);
-        input && ( input.value = value );
-    })
 
-    document.getElementsByClassName('controls')[0]
-            .addEventListener( 'change', e => {
-                CONFIG[ e.target.name ] = e.target.value;
-            });
+        if (input) {
+            if (input.type === 'checkbox') {
+                input.checked = value;
+            }
+            else input.value = value;
+
+            input.dispatchEvent( new Event('change') )
+        }
+    });
 }
 
 /* DROPZONE */
@@ -335,7 +420,7 @@ function onInputChange(e) {
     readFiles(files);    
 }
 
-/* loader */
+/* LOADER */
 function toggleLoader() {
     document.getElementById('loader').classList.toggle('on');
 }
