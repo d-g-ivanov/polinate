@@ -43,9 +43,53 @@ const sideEffects = {
     }
 };
 
+var toast = {
+    timer : null,
+    useTimer : false,
+    timerInterval: 3000,
+    
+    class: 'visible',
+
+    init : function () {
+        // SET DISMISS EVENT
+        document.getElementsByClassName('toast-dismiss')[0].addEventListener('click', toast.hide);
+    },
+
+    show : function (msg) {
+        // SET MESSAGE STRING
+        let html = `
+        ${msg.name ? `<h5>${msg.name}</h5>` : ''}
+        <h3>I failed!</h3>
+        ${msg.message ? `<p>${msg.message}</p>` : ''}
+        `;
+        // SET MESSAGE + SHOW BOX
+        document.getElementsByClassName("toast-message")[0].innerHTML = html;
+        document.getElementById("toast").classList.add( toast.class );
+
+        // RESET TIMER IF STILL RUNNING
+        if (toast.useTimer && toast.timer != null) {
+            clearTimeout(toast.timer);
+            toast.timer = null;
+        }
+
+        // SET DISPLAY TIME HERE
+        toast.useTimer && ( toast.timer = setTimeout(toast.hide, toast.timerInterval) ); 
+    },
+
+    hide : function () {
+        document.getElementById("toast").classList.remove( toast.class );
+        
+        if (toast.useTimer) {
+            clearTimeout(toast.timer);
+            toast.timer = null;
+        }
+    }
+}
+
 // start-up
 setupConfigs();
 setupDropzone();
+toast.init();
 
 /* MAIN FUNCTION TO START READING FILES FROM DROZONE */
 async function readFiles(files) {
@@ -61,22 +105,26 @@ async function readFiles(files) {
 
 // exceljs 3.4
 async function exceljsVersion(files) {
-    files = Array.prototype.slice.call(files);
-
-    // get the relevant content from each file
-    let fileContents = await Promise.all( files.map(extractData) );
-    CONFIG.logs && console.log('file contents', fileContents);
-
-    // merge that into a single store
-    let store = mergeData(fileContents);
-    CONFIG.logs && console.log('store', store);
-
-    // update files based on combined store
-    let updatedWorkbooks = updateWorkbooks(fileContents, store);
-    CONFIG.logs && console.log('updated workbooks', updatedWorkbooks);
-
-    // // save as excel file
-    saveToXlsx(updatedWorkbooks);
+    try {
+        files = Array.prototype.slice.call(files);
+    
+        // get the relevant content from each file
+        let fileContents = await Promise.all( files.map(extractData) );
+        CONFIG.logs && console.log('file contents', fileContents);
+    
+        // merge that into a single store
+        let store = mergeData(fileContents);
+        CONFIG.logs && console.log('store', store);
+    
+        // update files based on combined store
+        let updatedWorkbooks = updateWorkbooks(fileContents, store);
+        CONFIG.logs && console.log('updated workbooks', updatedWorkbooks);
+    
+        // // save as excel file
+        saveToXlsx(updatedWorkbooks);
+    } catch (error) {
+        handleError(error);
+    }
 }
 
 function extractData(file) {
@@ -86,6 +134,7 @@ function extractData(file) {
         reader.onload = function(e) {
             var arrayBuffer = reader.result;
             let workbook = new ExcelJS.Workbook();
+
             workbook.xlsx.load(arrayBuffer).then(function(workbook) {
                 let worksheet = workbook.getWorksheet( CONFIG.worksheetName );
                 let sourceColumn = worksheet.getColumn( CONFIG.sourceCellLocation.split('')[0] );
@@ -105,7 +154,7 @@ function extractData(file) {
                     }
                 });
                 res(map)
-            });
+            }).catch( rej );
         };
         reader.onerror = function (error) {
             console.log(error);
@@ -198,22 +247,26 @@ function saveToXlsx(files) {
 
 // xlsx = https://github.com/protobi/js-xlsx
 async function xlsxVersion(files) {
-    files = Array.prototype.slice.call(files);
+    try {
+        files = Array.prototype.slice.call(files);
 
-    // get the relevant content from each file
-    let fileContents = await Promise.all( files.map(_extractData) );
-    CONFIG.logs && console.log('file contents', fileContents);
-
-    // merge that into a single store
-    let store = mergeData(fileContents);
-    CONFIG.logs && console.log('store', store);
-
-    // update files based on combined store
-    let updatedWorkbooks = _updateWorkbooks(fileContents, store);
-    CONFIG.logs && console.log('updated workbooks', updatedWorkbooks);
-
-    // // save as excel file
-    _saveToXlsx(updatedWorkbooks);
+        // get the relevant content from each file
+        let fileContents = await Promise.all( files.map(_extractData) );
+        CONFIG.logs && console.log('file contents', fileContents);
+    
+        // merge that into a single store
+        let store = mergeData(fileContents);
+        CONFIG.logs && console.log('store', store);
+    
+        // update files based on combined store
+        let updatedWorkbooks = _updateWorkbooks(fileContents, store);
+        CONFIG.logs && console.log('updated workbooks', updatedWorkbooks);
+    
+        // // save as excel file
+        _saveToXlsx(updatedWorkbooks);
+    } catch (error) {
+        handleError(error);
+    }
 }
 
 function _extractData(file) {
@@ -315,7 +368,6 @@ function _saveToXlsx(files) {
 
 function getAllSourceCells(sheet, sourceCoords) {
     const decode_cell = XLSX.utils.decode_cell;
-
     return Object.keys( sheet )
         .filter( cellCode => {
             if (cellCode.startsWith('!') || decode_cell(cellCode).c !== sourceCoords.c) 
@@ -344,7 +396,7 @@ function setupConfigs() {
     // set up proper excel parser
     let parser = CONFIG.version;
     let script = document.createElement('script');
-    script.src = `./js/xlsx/${parser}.min.js`;
+    script.src = `./js/xlsx/${parser}.${CONFIG.logs ? 'full' : 'min'}.js`;
     document.body.appendChild(script);
     
     //
@@ -423,6 +475,23 @@ function onInputChange(e) {
 /* LOADER */
 function toggleLoader() {
     document.getElementById('loader').classList.toggle('on');
+}
+
+/* ERRORS */
+function handleError(error) {
+    let message = null;
+    switch (error.message) {
+        case 'Cannot read property \'getColumn\' of undefined':
+            message = 'The sheet you have selected does not seem to exist in some of the files. Please double-check.';
+            break;
+        default:
+            message = 'Something went wrong. See the browser console for details.';
+            break;
+    }
+
+    toast.show( { name: error.name, message } );
+
+    console.error(error);
 }
 
 }
