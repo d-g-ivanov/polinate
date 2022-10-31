@@ -5,13 +5,13 @@ const CONFIG = {
     // sourceCellLocation: 'D1',
     // targetCellLocation: 'E1',
     // worksheetName: 'Sheet1',
-    sourceCellLocation: 'K6',
-    targetCellLocation: 'L6',
-    worksheetName: 'Content Matrix 5.0',
+    sourceCellLocation: 'K1',
+    targetCellLocation: 'L1',
+    worksheetName: 'PDP',
     
     highlightColor: '#4cbb17',// '#008000',//'#ffa500',
     highlightEmptyColor: '#ed2939',//'#fc1c03',
-    logs: false,
+    logs: true,
     version: 'exceljs', // xlsx value will trigger another library, but it will not work with the latest changes, such as fuzzy
     fuzzy: true,
     acceptableFuzzyRating: 0.5,
@@ -150,7 +150,9 @@ function extractData(file) {
                     let target = worksheet.getCell(`${targetColumnName}${rowNumber}`);
 
                     if (target.text) {
-                        map.data[cell.text] = target.text;
+                        const key = isRichValue(cell.text) ? richToString(cell.text) : cell.text;
+                        const val = isRichValue(target.text) ? richToString(target.text) : target.text;
+                        map.data[key] = val;
                     }
                 });
                 res(map)
@@ -175,7 +177,7 @@ function updateWorkbooks(workbooks, store) {
             emptyColor = '00' + (CONFIG.highlightEmptyColor.replace('#', '').toUpperCase());
         
         sourceColumn.eachCell( (cell, rowNumber) => {
-            let sourceText = cell.text,
+            let sourceText = isRichValue(cell.text) ? richToString(cell.text) : cell.text,
                 target = worksheet.getCell(`${targetColumnName}${rowNumber}`),
                 color = null;
 
@@ -227,6 +229,8 @@ function updateWorkbooks(workbooks, store) {
                 pattern: 'solid',
                 fgColor: {argb: color }
             }
+
+            // console.log(target);
         });
 		
         return wb;
@@ -492,6 +496,15 @@ function handleError(error) {
     toast.show( { name: error.name, message } );
 
     console.error(error);
+}
+
+// other utils 
+function isRichValue(value) {
+    return Boolean(value && Array.isArray(value.richText));
+}
+
+function richToString(rich) {
+    return rich.richText.map(({ text }) => text).join('');
 }
 
 }
